@@ -1,0 +1,220 @@
+###################################
+#   Doc Prepared by ANEESH ANSARi  	# 
+#		#
+#    Project:- 
+###################################
+
+
+
+https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+ ###  Configure /etc/hosts with all cluster name&IP
+
+Configure VM to Bridge Network
+if NAT network is in use than pod will not be able to communicate, to do this use briged network.
+
+
+each vm should have 2GB RAM + 2 CPU
+to see swap memory
+free -h
+Disable swap space > swapoff -a
+free -h to Check swap space on/off
+
+## install kubeadm kubectl kubelet in all nodes 
+
+Check port numbers on server by following links
+
+Check available docker version in repo: #apt-cache policy docker.io
+**install docker and enable systemd/cgroup ubuntu 16.04/18.04
+
+# Install Docker CE
+## Set up the repository:
+### Install packages to allow apt to use a repository over HTTPS
+apt-get update && apt-get install apt-transport-https ca-certificates curl software-properties-common
+
+### Add Docker’s official GPG key
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+
+### Add Docker apt repository.
+add-apt-repository \
+  "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) \
+  stable"
+
+## Install Docker CE.
+apt-get update && apt-get install docker-ce=18.06.2~ce~3-0~ubuntu
+
+# Setup daemon.
+cat > /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "1024m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+
+
+
+# Restart docker.
+systemctl daemon-reload
+systemctl restart docker
+
+########## install kubernetes cluster 
+run following commands on every nodes
+
+apt-get update && apt-get install -y apt-transport-https
+
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+
+cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
+deb http://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+
+apt-get update && apt-get install -y kubelet kubeadm kubectl 
+#################################################################
+Update cgroup driver in kubernetes( recmended is systemd Now V.1.15)
+#docker info | grep "cgroup"
+vi /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+add following entries at last of 10-kubeadm.conf file
+Environment="cgroup-driver=systemd/cgroup-driver=cgroupfs"
+##################################################################
+
+
+*****************************
+now select one node as master node
+***********************************
+step1. installation of kubernetes
+#kubeadm init --pod-network-cidr=10.244.10.0/16 --apiserver-advertise-address=192.168.43.210 
+
+
+o/p-
+
+
+ mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+
+
+kubeadm join 192.168.1.20:6443 --token bh5hi8.vsxh1ifv5l5p26xv \
+        --discovery-token-ca-cert-hash sha256:d24744e95d3dfac628133ddf0422dda2cb4e473d5c5674f24a4739dae6df7879
+
+
+
+step2
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+export KUBECONFIG=$HOME/.kube/config
+
+step3 deploy network
+kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+sysctl net.bridge.bridge-nf-call-iptables=1 ( this is for flannel only )
+step4 
+##kubernetes bash auto complition 
+
+echo "source <(kubectl completion bash)" >> ~/.bashrc
+
+auto completion for KOPS
+#echo "source <(kops completion bash)" >> ~/.bashrc
+
+token to join slave nodes
+Then you can join any number of worker nodes by running the following on each as root:
+*****  token for node join 
+
+command if you missed token regentare token 
+
+#kubeadm token create --print-join-command
+or visit this link
+https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------
+If you don’t have the value of --discovery-token-ca-cert-hash, you can get it by running the following command chain on the control-plane node:
+
+openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | \
+   openssl dgst -sha256 -hex | sed 's/^.* //'
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+## set ENV
+echo "export KUBECONFIG=$HOME/admin.conf" | tee -a ~/.bashrc
+
+### List post networks ###
+#kubectl get pods -o wide --all-namespaces
+
+You will notice from the previous command, that all the pods are running except one: ‘kube-dns’. For resolving this we will install a pod network. To install the CALICO pod network, run the following command:
+
+$ kubectl apply -f https://docs.projectcalico.org/v3.0/getting-started/kubernetes/installation/hosted/kubeadm/1.7/calico.yaml 
+After some time, you will notice that all pods shift to the running state
+
+
+*** Display all nodes 
+#kubectl get  nodes
+
+Label the nodes 
+#kubectl label node NODE_NAME1 node-role.kubernetes.io/worker=worker
+
+
+
+
+*** Display nodes Internel external IP
+#kubectl get nodes -o wide
+
+
+
+####################  enable Ports on master and worker node ################
+
+To do so, type the following commands on your Master Node:
+
+sudo ufw allow 6443/tcp
+sudo ufw allow 2379/tcp     ( ETCD Ports)
+sudo ufw allow 2380/tcp     (etcd Controller )
+sudo ufw allow 10250/tcp
+sudo ufw allow 10251/tcp
+sudo ufw allow 10252/tcp
+sudo ufw allow 10255/tcp
+sudo ufw reload
+Additionally, these ports need to be open on each Worker Node:
+
+sudo ufw allow 10251/tcp
+sudo ufw allow 10255/tcp
+sudo ufw reload
+
+
+
+
+use the drain command to evict all user pods from the node. They will be scheduled onto other nodes by their controller
+(Deployment, ReplicaSet, etc.). This command is blocking and will return when the pods have been removed.  You can run multiple
+drain commands in separate shells to drain multiple nodes, but only one at a time will execute.
+
+ 
+
+#kubectl drain <nodename> --ignore-daemonsets  / removes all pods
+
+#kubectl delete node <nodename> / remove node from cluster 
+
+Mark the node as unschedulable by using the cordon command.  This ensures that no new pods will get scheduled to the node while you are preparing it for removal or maintenance.
+
+ 
+
+#kubectl cordon <nodename>  # For maintenance
+
+Once you have finished maintenance on a node you can use the uncordon command to allow scheduling on the node again. Then, as pods need to be scheduled they will appear back on that node.
+
+ 
+
+#kubectl uncordon <nodename>
+
+	
+	
+	
+	
